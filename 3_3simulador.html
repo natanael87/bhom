@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador: Interpretación de De Broglie-Bohm</title>
+    
+    <!-- Integración de MathJax para renderizado matemático avanzado -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --panel-bg: #1f2833;
+            --text-main: #c5c6c7;
+            --anahuac-orange: #FF6B00;
+            --neon-cyan: #00E5FF;
+            --neon-green: #39ff14;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            background-color: #000;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #bg-canvas { z-index: 1; }
+        #trail-canvas { z-index: 2; }
+        #particle-canvas { z-index: 3; }
+
+        #sidebar {
+            width: 380px;
+            background-color: var(--panel-bg);
+            padding: 20px;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        h1, h2 {
+            color: var(--anahuac-orange);
+            margin-top: 0;
+            font-weight: 600;
+        }
+
+        h1 { font-size: 1.5rem; border-bottom: 2px solid var(--anahuac-orange); padding-bottom: 10px; }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label { font-weight: bold; font-size: 0.9rem; }
+
+        input[type=range] {
+            accent-color: var(--anahuac-orange);
+            width: 100%;
+        }
+
+        button {
+            background-color: var(--anahuac-orange);
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            text-transform: uppercase;
+        }
+
+        button:hover { background-color: #e66000; }
+        
+        .btn-secondary { background-color: transparent; border: 2px solid var(--text-main); }
+        .btn-secondary:hover { background-color: rgba(255,255,255,0.1); }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-box {
+            background-color: rgba(0,0,0,0.3);
+            border-left: 4px solid var(--neon-cyan);
+            padding: 15px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            border-radius: 0 5px 5px 0;
+        }
+
+        .info-box p { margin: 0 0 15px 0; }
+        .info-box p:last-child { margin: 0; }
+        
+        .highlight { color: var(--neon-cyan); font-weight: bold; display: block; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="bg-canvas"></canvas>
+        <canvas id="trail-canvas"></canvas>
+        <canvas id="particle-canvas"></canvas>
+    </div>
+
+    <div id="sidebar">
+        <h1>Mecánica Bohmiana</h1>
+        
+        <div class="info-box">
+            <p><span class="highlight">El "Beable":</span> Las partículas tienen posiciones reales y trayectorias deterministas en todo momento. A esta realidad objetiva se le llama el "beable".</p>
+            <p><span class="highlight">La Onda Guía:</span> La densidad de probabilidad está dada por \( |\psi|^2 \), pero es la propia onda \( \psi \) la que genera un <i>Potencial Cuántico</i> no local que "pilota" a la partícula mediante la ecuación de velocidad:</p>
+            <p style="text-align: center; margin: 10px 0;">\( \mathbf{v} = \frac{\hbar}{m} \text{Im}\left( \frac{\nabla \psi}{\psi} \right) \)</p>
+        </div>
+
+        <div class="control-group">
+            <label for="slit-dist">Separación de Rendijas (<span id="dist-val">2.0</span>)</label>
+            <input type="range" id="slit-dist" min="1" max="4" step="0.1" value="2.0">
+        </div>
+
+        <div class="control-group">
+            <label for="wavelength">Longitud de Onda (<span id="wave-val">0.5</span>)</label>
+            <input type="range" id="wavelength" min="0.2" max="1.5" step="0.05" value="0.5">
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="show-wave" checked>
+            <label for="show-wave">Mostrar Onda Guía (Fondo)</label>
+        </div>
+
+        <button id="btn-launch">Lanzar 10 Partículas</button>
+        <button id="btn-clear" class="btn-secondary">Limpiar Rastros</button>
+    </div>
+
+    <script>
+        const bgCanvas = document.getElementById('bg-canvas');
+        const trailCanvas = document.getElementById('trail-canvas');
+        const pCanvas = document.getElementById('particle-canvas');
+        
+        const bgCtx = bgCanvas.getContext('2d', { alpha: false });
+        const trailCtx = trailCanvas.getContext('2d');
+        const pCtx = pCanvas.getContext('2d');
+
+        let width, height;
+        let d = 2.0; 
+        let lambda = 0.5; 
+        let k = (2 * Math.PI) / lambda;
+        const speedMultiplier = 15; 
+
+        let particles = [];
+        const scale = 50; 
+        const originY = 50; 
+
+        function resize() {
+            width = document.getElementById('canvas-container').clientWidth;
+            height = document.getElementById('canvas-container').clientHeight;
+            
+            [bgCanvas, trailCanvas, pCanvas].forEach(c => {
+                c.width = width;
+                c.height = height;
+            });
+            drawBackground();
+        }
+        window.addEventListener('resize', resize);
+
+        function computeWave(x, y) {
+            let r1 = Math.sqrt((x + d/2)**2 + y**2) + 0.001;
+            let r2 = Math.sqrt((x - d/2)**2 + y**2) + 0.001;
+
+            let phase1 = k * r1;
+            let phase2 = k * r2;
+            
+            let amp1 = 1 / Math.sqrt(r1);
+            let amp2 = 1 / Math.sqrt(r2);
+
+            let U = amp1 * Math.cos(phase1) + amp2 * Math.cos(phase2);
+            let V = amp1 * Math.sin(phase1) + amp2 * Math.sin(phase2);
+            
+            return { U, V, I: U*U + V*V };
+        }
+
+        function getBohmVelocity(x, y) {
+            const delta = 0.005;
+            const w0 = computeWave(x, y);
+            const wx = computeWave(x + delta, y);
+            const wy = computeWave(x, y + delta);
+
+            const Ux = (wx.U - w0.U) / delta;
+            const Vx = (wx.V - w0.V) / delta;
+            const Uy = (wy.U - w0.U) / delta;
+            const Vy = (wy.V - w0.V) / delta;
+
+            let vx = (w0.U * Vx - w0.V * Ux) / w0.I;
+            let vy = (w0.U * Vy - w0.V * Uy) / w0.I;
+
+            const maxV = 10;
+            const vMag = Math.sqrt(vx*vx + vy*vy);
+            if (vMag > maxV) {
+                vx = (vx / vMag) * maxV;
+                vy = (vy / vMag) * maxV;
+            }
+
+            if (vy < 0.1) vy = 0.1; 
+
+            return { vx, vy };
+        }
+
+        function drawBackground() {
+            if (!document.getElementById('show-wave').checked) {
+                bgCtx.fillStyle = '#0b0c10';
+                bgCtx.fillRect(0, 0, width, height);
+                return;
+            }
+
+            const imgData = bgCtx.createImageData(width, height);
+            const data = imgData.data;
+
+            for (let px = 0; px < width; px++) {
+                for (let py = 0; py < height; py++) {
+                    let x = (px - width / 2) / scale;
+                    let y = (py - originY) / scale;
+
+                    if (y < 0) { 
+                        let idx = (py * width + px) * 4;
+                        data[idx] = 11; data[idx+1] = 12; data[idx+2] = 16; data[idx+3] = 255;
+                        continue;
+                    }
+
+                    let wave = computeWave(x, y);
+                    let intensity = Math.min(wave.I * 15, 255);
+                    
+                    let idx = (py * width + px) * 4;
+                    data[idx] = 0; 
+                    data[idx+1] = Math.floor(intensity * 0.4); 
+                    data[idx+2] = Math.floor(intensity); 
+                    data[idx+3] = 255; 
+                }
+            }
+            bgCtx.putImageData(imgData, 0, 0);
+
+            bgCtx.fillStyle = '#FF6B00'; 
+            bgCtx.fillRect(0, originY - 2, width/2 - (d/2 * scale) - 5, 4);
+            bgCtx.fillRect(width/2 + (d/2 * scale) + 5, originY - 2, width/2, 4);
+            bgCtx.fillRect(width/2 - (d/2 * scale) + 5, originY - 2, (d * scale) - 10, 4);
+        }
+
+        function launchParticles() {
+            for (let i = 0; i < 10; i++) {
+                let slit = Math.random() > 0.5 ? 1 : -1;
+                let spread = (Math.random() + Math.random() + Math.random() - 1.5) * 0.15;
+                
+                particles.push({
+                    x: (slit * d/2) + spread,
+                    y: 0.05, 
+                    pxCanvas: 0,
+                    pyCanvas: 0,
+                    active: true,
+                    color: i % 2 === 0 ? '#00E5FF' : '#39ff14' 
+                });
+            }
+        }
+
+        let lastTime = 0;
+        function animate(timestamp) {
+            const dt = (timestamp - lastTime) / 1000 || 0.016;
+            lastTime = timestamp;
+
+            pCtx.clearRect(0, 0, width, height);
+
+            particles.forEach(p => {
+                if (!p.active) return;
+
+                let vel = getBohmVelocity(p.x, p.y);
+                
+                let nextX = p.x + vel.vx * dt * speedMultiplier;
+                let nextY = p.y + vel.vy * dt * speedMultiplier;
+
+                let oldPx = (p.x * scale) + width / 2;
+                let oldPy = (p.y * scale) + originY;
+                
+                let newPx = (nextX * scale) + width / 2;
+                let newPy = (nextY * scale) + originY;
+
+                trailCtx.beginPath();
+                trailCtx.moveTo(oldPx, oldPy);
+                trailCtx.lineTo(newPx, newPy);
+                trailCtx.strokeStyle = `rgba(${p.color === '#00E5FF' ? '0,229,255' : '57,255,20'}, 0.3)`;
+                trailCtx.lineWidth = 1;
+                trailCtx.stroke();
+
+                pCtx.beginPath();
+                pCtx.arc(newPx, newPy, 3, 0, Math.PI * 2);
+                pCtx.fillStyle = p.color;
+                pCtx.shadowBlur = 10;
+                pCtx.shadowColor = p.color;
+                pCtx.fill();
+                pCtx.shadowBlur = 0; 
+
+                p.x = nextX;
+                p.y = nextY;
+
+                if (newPy > height || newPx < 0 || newPx > width) {
+                    p.active = false;
+                }
+            });
+
+            particles = particles.filter(p => p.active);
+            requestAnimationFrame(animate);
+        }
+
+        document.getElementById('slit-dist').addEventListener('input', (e) => {
+            d = parseFloat(e.target.value);
+            document.getElementById('dist-val').innerText = d.toFixed(1);
+            drawBackground();
+        });
+
+        document.getElementById('wavelength').addEventListener('input', (e) => {
+            lambda = parseFloat(e.target.value);
+            k = (2 * Math.PI) / lambda;
+            document.getElementById('wave-val').innerText = lambda.toFixed(2);
+            drawBackground();
+        });
+
+        document.getElementById('show-wave').addEventListener('change', drawBackground);
+        document.getElementById('btn-launch').addEventListener('click', launchParticles);
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            trailCtx.clearRect(0, 0, width, height);
+            particles = [];
+        });
+
+        resize();
+        k = (2 * Math.PI) / lambda;
+        requestAnimationFrame(animate);
+
+    </script>
+</body>
+</html>
