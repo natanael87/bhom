@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simulador: Interpretación de De Broglie-Bohm</title>
     
-    <!-- Integración de MathJax para renderizado matemático avanzado -->
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
@@ -250,13 +249,18 @@
                     }
 
                     let wave = computeWave(x, y);
-                    let intensity = Math.min(wave.I * 15, 255);
+                    
+                    // --- MODIFICACIÓN DE COLOR Y VISIBILIDAD ---
+                    // Usamos Math.pow(..., 0.5) para realzar las ondas lejanas (compensar la caída de intensidad)
+                    // y aumentamos el multiplicador base a 150 para que bañe la pantalla.
+                    let intensity = Math.min(Math.pow(wave.I, 0.5) * 150, 255);
                     
                     let idx = (py * width + px) * 4;
-                    data[idx] = 0; 
-                    data[idx+1] = Math.floor(intensity * 0.4); 
-                    data[idx+2] = Math.floor(intensity); 
-                    data[idx+3] = 255; 
+                    data[idx] = 0;                               // R (0)
+                    data[idx+1] = Math.floor(intensity * 0.65);  // G (Verde mezclado para dar un tono cian vibrante)
+                    data[idx+2] = Math.floor(intensity);         // B (Azul dominante)
+                    data[idx+3] = 255;                           // Alpha
+                    // -------------------------------------------
                 }
             }
             bgCtx.putImageData(imgData, 0, 0);
